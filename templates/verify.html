@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify - TrustLens</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">
+                🔐 TrustLens
+            </div>
+            <ul class="nav-menu">
+                <li><a href="/" class="nav-link">Upload</a></li>
+                <li><a href="/gallery" class="nav-link">Gallery</a></li>
+                <li><a href="/verify" class="nav-link active">Verify</a></li>
+                <li><a href="/dashboard" class="nav-link">Dashboard</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <section class="section">
+            <h1>🔍 Verify Image Integrity</h1>
+            <p class="subtitle">Upload a file to check if it has been tampered with. The system will compare its hash to the blockchain record.</p>
+
+            <!-- Verification Form -->
+            <form id="verifyForm" class="upload-form">
+                <div class="form-group">
+                    <label for="verifyFileInput">Select Image to Verify:</label>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="verifyFileInput" name="file" accept="image/*" required>
+                        <span class="file-label">Choose an image to verify</span>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary">🔐 Verify Image</button>
+            </form>
+
+            <!-- Verification Result -->
+            <div id="verifyResult" class="verification-result" style="display: none;">
+                <div id="verifyContent"></div>
+            </div>
+
+            <div id="verifyStatus" class="status-message" style="display: none;"></div>
+        </section>
+
+        <!-- Tampering Demo Section -->
+        <section class="section">
+            <h2>🧪 Tampering Demo</h2>
+            <p>Use this to demonstrate tamper detection. Select an image from the gallery, tamper with it, and then verify it to see the detection in action.</p>
+
+            <div class="demo-controls">
+                <div class="form-group">
+                    <label for="demoFileSelect">Select File from Gallery to Tamper:</label>
+                    <select id="demoFileSelect" class="form-control">
+                        <option value="">-- Loading files --</option>
+                    </select>
+                </div>
+
+                <button id="tamperButton" class="btn btn-warning" disabled>⚠️ Simulate Tampering</button>
+                <span id="tamperMessage" class="status-message" style="display: none;"></span>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="section info-box">
+            <h3>How Verification Works</h3>
+            <ol>
+                <li><strong>Upload Original:</strong> When you upload an image, we calculate its SHA-256 hash (a unique fingerprint)</li>
+                <li><strong>Store in Blockchain:</strong> This hash is recorded in the blockchain, creating a permanent record</li>
+                <li><strong>Verify Later:</strong> When you verify an image, we recalculate its hash</li>
+                <li><strong>Compare:</strong> If the new hash matches the stored hash → ✅ Unaltered. If it doesn't → ⚠️ Tampered</li>
+            </ol>
+            <p><strong>Why it works:</strong> Even changing a single pixel in an image completely changes its SHA-256 hash. This makes tampering detectable.</p>
+        </section>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <p>&copy; 2026 TrustLens - Computer Vision Tamper Detection System</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        // Load demo file list when page loads
+        document.addEventListener('DOMContentLoaded', loadDemoFileList);
+
+        function loadDemoFileList() {
+            fetch('/api/uploads')
+                .then(r => r.json())
+                .then(data => {
+                    const select = document.getElementById('demoFileSelect');
+                    if (data.uploads && data.uploads.length > 0) {
+                        select.innerHTML = '<option value="">-- Select a file --</option>';
+                        data.uploads.forEach(upload => {
+                            const option = document.createElement('option');
+                            option.value = upload.filename;
+                            option.textContent = `${upload.filename} (${upload.uploader_name})`;
+                            select.appendChild(option);
+                        });
+                        document.getElementById('tamperButton').disabled = false;
+                    } else {
+                        select.innerHTML = '<option value="">No files uploaded yet</option>';
+                    }
+                });
+        }
+
+        // Tampering demo
+        document.getElementById('tamperButton').addEventListener('click', function() {
+            const filename = document.getElementById('demoFileSelect').value;
+            if (!filename) {
+                alert('Please select a file');
+                return;
+            }
+
+            const msg = document.getElementById('tamperMessage');
+            msg.textContent = 'Tampering...';
+            msg.style.display = 'block';
+            msg.className = 'status-message loading';
+
+            fetch(`/api/tamper-demo/${filename}`, { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        msg.textContent = `✅ ${data.message}`;
+                        msg.className = 'status-message success';
+                        msg.innerHTML += `<br><small>New hash: ${data.new_hash.substring(0, 32)}...</small>`;
+                    } else {
+                        msg.textContent = `❌ ${data.error}`;
+                        msg.className = 'status-message error';
+                    }
+                });
+        });
+
+        // Verification form submission
+        document.getElementById('verifyForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const fileInput = document.getElementById('verifyFileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('Please select a file');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const resultDiv = document.getElementById('verifyResult');
+            const statusDiv = document.getElementById('verifyStatus');
+
+            resultDiv.style.display = 'none';
+            statusDiv.textContent = 'Verifying...';
+            statusDiv.className = 'status-message loading';
+            statusDiv.style.display = 'block';
+
+            fetch('/verify-upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.json())
+            .then(data => {
+                statusDiv.style.display = 'none';
+
+                if (data.verified) {
+                    // File is unaltered
+                    const content = `
+                        <div class="verification-success">
+                            <h2>✅ Verified - Unaltered</h2>
+                            <p>This file matches the blockchain record perfectly.</p>
+                            <div class="info-grid">
+                                <div class="info-item">
+                                    <strong>Filename:</strong>
+                                    <span>${data.filename}</span>
+                                </div>
+                                <div class="info-item">
+                                    <strong>Uploader:</strong>
+                                    <span>${data.uploader}</span>
+                                </div>
+                                <div class="info-item">
+                                    <strong>Upload Time:</strong>
+                                    <span>${new Date(data.upload_time).toLocaleString()}</span>
+                                </div>
+                                <div class="info-item">
+                                    <strong>Block Index:</strong>
+                                    <span>#${data.block_index}</span>
+                                </div>
+                                <div class="info-item full-width">
+                                    <strong>File Hash:</strong>
+                                    <code>${data.original_hash}</code>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('verifyContent').innerHTML = content;
+                    resultDiv.style.display = 'block';
+                } else {
+                    // File is tampered
+                    const content = `
+                        <div class="verification-failure">
+                            <h2>⚠️ Tampering Detected</h2>
+                            <p>This file does not match any record in the blockchain!</p>
+                            <div class="info-grid">
+                                <div class="info-item full-width">
+                                    <strong>Current Hash:</strong>
+                                    <code>${data.current_hash}</code>
+                                </div>
+                                <div class="info-item full-width">
+                                    <strong>Error:</strong>
+                                    <span>${data.error}</span>
+                                </div>
+                            </div>
+                            <p style="margin-top: 20px; color: #e74c3c;">
+                                <strong>This could mean:</strong>
+                                <ul>
+                                    <li>The file has been modified</li>
+                                    <li>The file was not uploaded through TrustLens</li>
+                                    <li>The blockchain has been tampered with</li>
+                                </ul>
+                            </p>
+                        </div>
+                    `;
+                    document.getElementById('verifyContent').innerHTML = content;
+                    resultDiv.style.display = 'block';
+                }
+            })
+            .catch(err => {
+                statusDiv.textContent = `❌ Error: ${err.message}`;
+                statusDiv.className = 'status-message error';
+            });
+        });
+    </script>
+</body>
+</html>

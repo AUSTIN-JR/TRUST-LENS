@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - TrustLens</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">
+                🔐 TrustLens
+            </div>
+            <ul class="nav-menu">
+                <li><a href="/" class="nav-link">Upload</a></li>
+                <li><a href="/gallery" class="nav-link">Gallery</a></li>
+                <li><a href="/verify" class="nav-link">Verify</a></li>
+                <li><a href="/dashboard" class="nav-link active">Dashboard</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <h1>📊 TrustLens Dashboard</h1>
+        <p class="subtitle">System status, blockchain verification, and data integrity overview.</p>
+
+        <!-- Key Metrics -->
+        <section class="metrics-section">
+            <div class="metric-card">
+                <div class="metric-value" id="totalBlocks">0</div>
+                <div class="metric-label">Total Blocks</div>
+                <div class="metric-icon">⛓️</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-value" id="totalUploads">0</div>
+                <div class="metric-label">Images Uploaded</div>
+                <div class="metric-icon">🖼️</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-value" id="blockchainStatus">Checking...</div>
+                <div class="metric-label">Blockchain Status</div>
+                <div class="metric-icon">🔐</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-value" id="tamperAlerts">0</div>
+                <div class="metric-label">Tamper Alerts</div>
+                <div class="metric-icon">⚠️</div>
+            </div>
+        </section>
+
+        <!-- Blockchain Timeline -->
+        <section class="section">
+            <h2>⛓️ Blockchain Timeline</h2>
+            <p>Visual representation of the blockchain chain of blocks.</p>
+
+            <div id="blockchainTimeline" class="timeline">
+                <div class="timeline-item">
+                    <div class="timeline-dot"></div>
+                    <div class="timeline-content">
+                        <p class="loading">Loading blockchain...</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Verification Status -->
+        <section class="section">
+            <h2>✅ System Verification</h2>
+            <div id="verificationStatus" class="status-box">
+                <p class="loading">Verifying blockchain...</p>
+            </div>
+        </section>
+
+        <!-- Recent Activity -->
+        <section class="section">
+            <h2>📝 Recent Uploads</h2>
+            <table id="recentUploads" class="data-table">
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Uploader</th>
+                        <th>Upload Time</th>
+                        <th>Block #</th>
+                        <th>File Hash</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="5" class="loading">Loading uploads...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Inference Statistics -->
+        <section class="section">
+            <h2>🤖 Inference Statistics</h2>
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="stat-number" id="totalInferences">0</div>
+                    <div class="stat-label">Total Inferences</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-number" id="avgConfidence">0%</div>
+                    <div class="stat-label">Avg. Confidence</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-number" id="modelsUsed">0</div>
+                    <div class="stat-label">Models Used</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-number" id="commonPrediction">-</div>
+                    <div class="stat-label">Most Common Prediction</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Recent Inferences -->
+        <section class="section">
+            <h2>🔍 Recent Inferences</h2>
+            <div id="recentInferences" class="inference-table">
+                <p class="loading">Loading inferences...</p>
+            </div>
+        </section>
+
+        <!-- System Info -->
+        <section class="section info-box">
+            <h3>📖 About TrustLens</h3>
+            <p>TrustLens is a tamper-detection system for computer vision pipelines using a custom blockchain.</p>
+            <ul>
+                <li><strong>Blockchain:</strong> Custom Python implementation with SHA-256 hashing</li>
+                <li><strong>Storage:</strong> SQLite database for permanent records</li>
+                <li><strong>Verification:</strong> File hash comparison against blockchain</li>
+                <li><strong>Security:</strong> Tamper detection via cryptographic hashing</li>
+            </ul>
+        </section>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <p>&copy; 2026 TrustLens - Computer Vision Tamper Detection System</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        // Load dashboard data when page loads
+        document.addEventListener('DOMContentLoaded', loadDashboard);
+
+        function loadDashboard() {
+            loadBlockchainInfo();
+            loadUploadsList();
+            loadInferenceStats();
+            loadRecentInferences();
+            setInterval(loadBlockchainInfo, 5000); // Refresh every 5 seconds
+            setInterval(loadInferenceStats, 5000);
+            setInterval(loadRecentInferences, 5000);
+        }
+
+        function loadBlockchainInfo() {
+            fetch('/api/blockchain')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+
+                    // Update metrics
+                    document.getElementById('totalBlocks').textContent = data.total_blocks;
+
+                    // Update blockchain status
+                    const statusEl = document.getElementById('blockchainStatus');
+                    if (data.is_valid) {
+                        statusEl.textContent = '✅ Valid';
+                        statusEl.parentElement.style.borderLeft = '4px solid #27ae60';
+                    } else {
+                        statusEl.textContent = '❌ Invalid';
+                        statusEl.parentElement.style.borderLeft = '4px solid #e74c3c';
+                    }
+
+                    // Build timeline
+                    const timeline = document.getElementById('blockchainTimeline');
+                    timeline.innerHTML = '';
+
+                    data.chain.forEach((block, index) => {
+                        let blockType = block.data.type || 'unknown';
+                        let blockLabel = '';
+
+                        switch(blockType) {
+                            case 'genesis':
+                                blockLabel = '🌱 Genesis Block';
+                                break;
+                            case 'image_upload':
+                                blockLabel = `🖼️ Image: ${block.data.filename}`;
+                                break;
+                            case 'model_training':
+                                blockLabel = `🤖 Model: ${block.data.model_name}`;
+                                break;
+                            case 'model_info':
+                                blockLabel = `🤖 Model: ${block.data.model_name}`;
+                                break;
+                            case 'inference':
+                                blockLabel = `🔍 Inference: ${block.data.top_prediction}`;
+                                break;
+                            default:
+                                blockLabel = `📦 Block ${index}`;
+                        }
+
+                        const item = document.createElement('div');
+                        item.className = 'timeline-item';
+                        item.innerHTML = `
+                            <div class="timeline-dot"></div>
+                            <div class="timeline-content">
+                                <h4>${blockLabel}</h4>
+                                <small>Block #${block.index}</small>
+                                <small class="hash-preview">Hash: ${block.current_hash.substring(0, 16)}...</small>
+                            </div>
+                        `;
+                        timeline.appendChild(item);
+                    });
+
+                    // Update verification status
+                    const verifyEl = document.getElementById('verificationStatus');
+                    if (data.is_valid) {
+                        verifyEl.innerHTML = `
+                            <div class="verification-success">
+                                <h3>✅ Blockchain Verified</h3>
+                                <p>All ${data.total_blocks} blocks are intact and properly linked.</p>
+                                <p>No tampering detected.</p>
+                            </div>
+                        `;
+                    } else {
+                        verifyEl.innerHTML = `
+                            <div class="verification-failure">
+                                <h3>❌ Blockchain Invalid</h3>
+                                <p>${data.error}</p>
+                            </div>
+                        `;
+                    }
+                });
+        }
+
+        function loadUploadsList() {
+            fetch('/api/uploads')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+
+                    // Update upload count
+                    document.getElementById('totalUploads').textContent = data.total_uploads;
+
+                    // Update table
+                    const tbody = document.querySelector('#recentUploads tbody');
+                    tbody.innerHTML = '';
+
+                    if (data.uploads.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" class="text-center">No uploads yet</td></tr>';
+                        return;
+                    }
+
+                    // Show most recent 10
+                    data.uploads.slice(0, 10).forEach(upload => {
+                        const row = document.createElement('tr');
+                        const uploadTime = new Date(upload.upload_timestamp).toLocaleString();
+                        row.innerHTML = `
+                            <td>${upload.filename}</td>
+                            <td>${upload.uploader_name}</td>
+                            <td>${uploadTime}</td>
+                            <td>#${upload.block_index}</td>
+                            <td><code class="hash-preview">${upload.file_hash.substring(0, 16)}...</code></td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                });
+        }
+
+        function loadInferenceStats() {
+            fetch('/api/model-statistics')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+
+                    const summary = data.summary;
+                    document.getElementById('totalInferences').textContent = summary.total_inferences;
+                    document.getElementById('avgConfidence').textContent =
+                        (summary.average_confidence * 100).toFixed(1) + '%';
+                    document.getElementById('modelsUsed').textContent = summary.models_used;
+                    document.getElementById('commonPrediction').textContent =
+                        summary.most_common_prediction || 'N/A';
+                });
+        }
+
+        function loadRecentInferences() {
+            fetch('/api/inference-logs?limit=10')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+
+                    const container = document.getElementById('recentInferences');
+                    container.innerHTML = '';
+
+                    if (data.inferences.length === 0) {
+                        container.innerHTML = '<p class="text-center loading">No inferences yet</p>';
+                        return;
+                    }
+
+                    const table = document.createElement('table');
+                    table.className = 'data-table';
+                    table.innerHTML = `
+                        <thead>
+                            <tr>
+                                <th>Image</th>
+                                <th>Prediction</th>
+                                <th>Confidence</th>
+                                <th>Model</th>
+                                <th>Time</th>
+                                <th>Verify</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    `;
+
+                    const tbody = table.querySelector('tbody');
+
+                    data.inferences.forEach(inf => {
+                        const row = document.createElement('tr');
+                        const time = new Date(inf.inference_timestamp).toLocaleString();
+                        const confidence = (inf.confidence_score * 100).toFixed(1);
+
+                        row.innerHTML = `
+                            <td>${inf.filename || 'Unknown'}</td>
+                            <td><strong>${inf.top_prediction}</strong></td>
+                            <td>${confidence}%</td>
+                            <td>${inf.model_name}</td>
+                            <td><small>${time}</small></td>
+                            <td>
+                                <button class="verify-btn" onclick="verifyInference(${inf.id})">
+                                    Check
+                                </button>
+                            </td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+
+                    container.appendChild(table);
+                });
+        }
+
+        function verifyInference(inferenceId) {
+            fetch(`/api/verify-inference/${inferenceId}`)
+                .then(r => r.json())
+                .then(data => {
+                    let message = data.verified ?
+                        `✅ ${data.message}` :
+                        `⚠️ ${data.message}`;
+                    alert(message);
+                });
+        }
+    </script>
+</body>
+</html>
