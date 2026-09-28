@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.DS_Store
+*.db
+*.db-shm
+*.db-wal
+*.zip
+models/
+uploads/
+venv/
+.env
+TRUST-LENS/

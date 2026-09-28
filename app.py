@@ -23,6 +23,8 @@ import json
 from blockchain import Blockchain
 from model import CVModel
 from inference_logger import InferenceLogger
+import threading
+import time
 
 # ============================================================================
 # FLASK APP SETUP
@@ -37,6 +39,9 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp'}
 
 # Create uploads folder if it doesn't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Database lock for thread-safe access
+db_lock = threading.Lock()
 
 # Initialize blockchain (global - will persist during app session)
 blockchain = Blockchain()
@@ -55,149 +60,181 @@ inference_logger = InferenceLogger(DB_PATH)
 def init_db():
     """
     Initialize SQLite database with required tables.
-
-    This creates two tables:
-    1. uploads - tracks all uploaded images
-    2. blockchain - stores the blockchain state
+    Uses WAL mode for better concurrent access handling.
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    with db_lock:
+        conn = sqlite3.connect(DB_PATH, timeout=30.0)
+        conn.execute('PRAGMA journal_mode=WAL')
+        conn.execute('PRAGMA busy_timeout=30000')
+        cursor = conn.cursor()
 
-    # Table for storing upload records
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS uploads (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filename TEXT NOT NULL,
-            file_hash TEXT NOT NULL UNIQUE,
-            uploader_name TEXT NOT NULL,
-            upload_timestamp TEXT NOT NULL,
-            file_path TEXT NOT NULL,
-            block_index INTEGER,
-            FOREIGN KEY(block_index) REFERENCES blockchain_blocks(block_index)
-        )
-    ''')
+        # Table for storing upload records
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS uploads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL,
+                file_hash TEXT NOT NULL UNIQUE,
+                uploader_name TEXT NOT NULL,
+                upload_timestamp TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                block_index INTEGER,
+                FOREIGN KEY(block_index) REFERENCES blockchain_blocks(block_index)
+            )
+        ''')
 
-    # Table for storing blockchain blocks
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS blockchain_blocks (
-            block_index INTEGER PRIMARY KEY,
-            timestamp TEXT NOT NULL,
-            data TEXT NOT NULL,
-            previous_hash TEXT NOT NULL,
-            current_hash TEXT NOT NULL
-        )
-    ''')
+        # Table for storing blockchain blocks
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS blockchain_blocks (
+                block_index INTEGER PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                data TEXT NOT NULL,
+                previous_hash TEXT NOT NULL,
+                current_hash TEXT NOT NULL
+            )
+        ''')
 
-    # Table for tracking tampering alerts
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS tamper_alerts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filename TEXT NOT NULL,
-            original_hash TEXT NOT NULL,
-            current_hash TEXT NOT NULL,
-            detected_timestamp TEXT NOT NULL,
-            status TEXT
-        )
-    ''')
+        # Table for tracking tampering alerts
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tamper_alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL,
+                original_hash TEXT NOT NULL,
+                current_hash TEXT NOT NULL,
+                detected_timestamp TEXT NOT NULL,
+                status TEXT
+            )
+        ''')
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
 
 
 def save_block_to_db(block):
     """
-    Save a blockchain block to the database.
-
-    Args:
-        block (Block): The block to save
+    Save a blockchain block to the database with timeout handling.
+    Uses WAL mode and increased timeout for concurrent access.
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with db_lock:
+                conn = sqlite3.connect(DB_PATH, timeout=30.0)
+                conn.execute('PRAGMA journal_mode=WAL')
+                conn.execute('PRAGMA busy_timeout=30000')
+                cursor = conn.cursor()
 
-    cursor.execute('''
-        INSERT INTO blockchain_blocks
-        (block_index, timestamp, data, previous_hash, current_hash)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (
-        block.index,
-        block.timestamp,
-        json.dumps(block.data),
-        block.previous_hash,
-        block.current_hash
-    ))
+                cursor.execute('''
+                    INSERT INTO blockchain_blocks
+                    (block_index, timestamp, data, previous_hash, current_hash)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (
+                    block.index,
+                    block.timestamp,
+                    json.dumps(block.data),
+                    block.previous_hash,
+                    block.current_hash
+                ))
 
-    conn.commit()
-    conn.close()
+                conn.commit()
+                conn.close()
+                return True
+        except sqlite3.OperationalError as e:
+            if attempt < max_retries - 1:
+                time.sleep(0.5)
+            else:
+                raise
+    return False
 
 
 def save_upload_record(filename, file_hash, uploader_name, file_path, block_index):
     """
-    Save an upload record to the database.
-
-    Args:
-        filename (str): Original filename
-        file_hash (str): SHA-256 hash of the file
-        uploader_name (str): Name of the person uploading
-        file_path (str): Path where file was saved
-        block_index (int): Index of the blockchain block for this upload
+    Save an upload record to the database with timeout handling.
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with db_lock:
+                conn = sqlite3.connect(DB_PATH, timeout=30.0)
+                conn.execute('PRAGMA journal_mode=WAL')
+                conn.execute('PRAGMA busy_timeout=30000')
+                cursor = conn.cursor()
 
-    cursor.execute('''
-        INSERT INTO uploads
-        (filename, file_hash, uploader_name, upload_timestamp, file_path, block_index)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (
-        filename,
-        file_hash,
-        uploader_name,
-        datetime.now().isoformat(),
-        file_path,
-        block_index
-    ))
+                cursor.execute('''
+                    INSERT INTO uploads
+                    (filename, file_hash, uploader_name, upload_timestamp, file_path, block_index)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (
+                    filename,
+                    file_hash,
+                    uploader_name,
+                    datetime.now().isoformat(),
+                    file_path,
+                    block_index
+                ))
 
-    conn.commit()
-    conn.close()
+                conn.commit()
+                conn.close()
+                return True
+        except sqlite3.OperationalError as e:
+            if attempt < max_retries - 1:
+                time.sleep(0.5)
+            else:
+                raise
+    return False
 
 
 def get_all_uploads():
     """
     Retrieve all uploaded images from the database.
-
-    Returns:
-        list: List of upload records as dictionaries
     """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with db_lock:
+                conn = sqlite3.connect(DB_PATH, timeout=30.0)
+                conn.row_factory = sqlite3.Row
+                conn.execute('PRAGMA journal_mode=WAL')
+                conn.execute('PRAGMA busy_timeout=30000')
+                cursor = conn.cursor()
 
-    cursor.execute('SELECT * FROM uploads ORDER BY id DESC')
-    uploads = [dict(row) for row in cursor.fetchall()]
+                cursor.execute('SELECT * FROM uploads ORDER BY id DESC')
+                uploads = [dict(row) for row in cursor.fetchall()]
 
-    conn.close()
-    return uploads
+                conn.close()
+                return uploads
+        except sqlite3.OperationalError as e:
+            if attempt < max_retries - 1:
+                time.sleep(0.5)
+            else:
+                return []
+    return []
 
 
 def get_upload_by_hash(file_hash):
     """
     Find an upload record by its SHA-256 hash.
-
-    Args:
-        file_hash (str): The SHA-256 hash to search for
-
-    Returns:
-        dict: Upload record or None if not found
     """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with db_lock:
+                conn = sqlite3.connect(DB_PATH, timeout=30.0)
+                conn.row_factory = sqlite3.Row
+                conn.execute('PRAGMA journal_mode=WAL')
+                conn.execute('PRAGMA busy_timeout=30000')
+                cursor = conn.cursor()
 
-    cursor.execute('SELECT * FROM uploads WHERE file_hash = ?', (file_hash,))
-    result = cursor.fetchone()
-    conn.close()
+                cursor.execute('SELECT * FROM uploads WHERE file_hash = ?', (file_hash,))
+                result = cursor.fetchone()
+                conn.close()
 
-    return dict(result) if result else None
+                return dict(result) if result else None
+        except sqlite3.OperationalError as e:
+            if attempt < max_retries - 1:
+                time.sleep(0.5)
+            else:
+                return None
+    return None
 
 
 # ============================================================================
@@ -286,9 +323,13 @@ def upload_image():
                 'error': f'File type not allowed. Allowed: {", ".join(ALLOWED_EXTENSIONS)}'
             }), 400
 
-        # Save file
-        filename = file.filename
-        file_path = os.path.join(UPLOAD_FOLDER, filename)
+        # Save file with unique name to avoid conflicts
+        import uuid
+        unique_filename = f"{uuid.uuid4()}_{file.filename}"
+        file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
+
+        # Ensure directory exists
+        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
         file.save(file_path)
 
         # Calculate file hash
@@ -297,6 +338,11 @@ def upload_image():
         # Check if this file already exists in blockchain
         existing = get_upload_by_hash(file_hash)
         if existing:
+            # Clean up the file we just saved
+            try:
+                os.remove(file_path)
+            except:
+                pass
             return jsonify({
                 'success': False,
                 'error': 'This file has already been uploaded',
@@ -306,7 +352,7 @@ def upload_image():
         # Create blockchain block
         block_data = {
             'type': 'image_upload',
-            'filename': filename,
+            'filename': file.filename,
             'file_hash': file_hash,
             'uploader_name': uploader_name,
             'upload_timestamp': datetime.now().isoformat()
@@ -318,19 +364,22 @@ def upload_image():
         save_block_to_db(new_block)
 
         # Save upload record
-        save_upload_record(filename, file_hash, uploader_name, file_path, new_block.index)
+        save_upload_record(file.filename, file_hash, uploader_name, file_path, new_block.index)
 
         return jsonify({
             'success': True,
             'message': f'File uploaded successfully',
-            'filename': filename,
+            'filename': file.filename,
             'file_hash': file_hash,
             'block_index': new_block.index,
             'block_hash': new_block.current_hash
         }), 200
 
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        import traceback
+        print(f"Upload error: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': f'Upload failed: {str(e)}'}), 500
 
 
 # ============================================================================
